@@ -1,1 +1,100 @@
 
+name: Build Gondi APK
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Create Full Gondi App
+        run: |
+          mkdir -p app/src/main/java/com/gondi/app
+          mkdir -p app/src/main/res/layout
+          mkdir -p app/src/main/res/values
+          mkdir -p gradle/wrapper
+          echo "include ':app'" > settings.gradle
+          echo "distributionUrl=https://services.gradle.org/distributions/gradle-8.4-bin.zip" > gradle/wrapper/gradle-wrapper.properties
+          echo -e "#!/bin/sh\nexec gradle \"\$@\"" > gradlew
+          chmod +x gradlew
+          cat > build.gradle <<'EOL'
+          buildscript {
+              ext.kotlin_version = '1.9.10'
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:8.1.2'
+                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+              }
+          }
+          allprojects { repositories { google(); mavenCentral() } }
+          EOL
+          cat > app/build.gradle <<'EOL'
+          plugins { id 'com.android.application'; id 'kotlin-android' }
+          android {
+              namespace 'com.gondi.app'
+              compileSdk 34
+              defaultConfig { applicationId "com.gondi.app"; minSdk 21; targetSdk 34; versionCode 1; versionName "1.0" }
+              buildTypes { release { minifyEnabled false } }
+              compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+              kotlinOptions { jvmTarget = '17' }
+          }
+          dependencies {
+              implementation 'androidx.core:core-ktx:1.12.0'
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'com.google.android.material:material:1.11.0'
+          }
+          EOL
+          cat > app/src/main/AndroidManifest.xml <<'EOL'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application android:allowBackup="true" android:label="Gondi Shabd" android:theme="@Theme.AppCompat.Light.DarkActionBar">
+                  <activity android:name=".MainActivity" android:exported="true">
+                      <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOL
+          echo '<resources><string name="app_name">Gondi Shabd</string></resources>' > app/src/main/res/values/strings.xml
+          cat > app/src/main/res/layout/activity_main.xml <<'EOL'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:orientation="vertical" android:padding="16dp" android:layout_width="match_parent" android:layout_height="match_parent">
+              <TextView android:text="Gondi - Hindi Translator" android:textSize="22sp" android:textStyle="bold" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+              <EditText android:id="@+id/inputWord" android:hint="Gondi shabd likho (ex: nana)" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp"/>
+              <Button android:id="@+id/btnTranslate" android:text="Hindi me Anuvaad" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp"/>
+              <TextView android:id="@+id/tvResult" android:text="Result yahan ayega" android:textSize="18sp" android:layout_marginTop="24dp" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+          </LinearLayout>
+          EOL
+          cat > app/src/main/java/com/gondi/app/MainActivity.kt <<'EOL'
+          package com.gondi.app
+          import android.os.Bundle
+          import android.widget.*
+          import androidx.appcompat.app.AppCompatActivity
+          class MainActivity : AppCompatActivity() {
+              val dict = mapOf("nana" to "chhota bhai", "dada" to "bada bhai", "aaya" to "maa", "baba" to "pita", "tola" to "gaon", "er" to "paani", "neli" to "zameen", "joh" to "namaste / johar")
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_main)
+                  val input = findViewById<EditText>(R.id.inputWord)
+                  val btn = findViewById<Button>(R.id.btnTranslate)
+                  val result = findViewById<TextView>(R.id.tvResult)
+                  btn.setOnClickListener {
+                      val w = input.text.toString().trim().lowercase()
+                      val hindi = dict[w]?: "Database me nahi mila"
+                      result.text = "$w = $hindi"
+                  }
+              }
+          }
+          EOL
+      - name: Build APK and AAB
+        run: |
+         ./gradlew assembleDebug
+         ./gradlew bundleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gondi-apk-aab
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/bundle/release/*.aab
